@@ -235,6 +235,11 @@ pub fn run() -> std::process::ExitCode {
                 log_setup_panic("window-core", panic);
             }
 
+            #[cfg(target_os = "macos")]
+            if let Err(error) = feat::hearthstone::start(app.handle()) {
+                logging!(error, Type::Setup, "Failed to start Hearthstone overlay: {error:#}");
+            }
+
             Ok(())
         })
         .invoke_handler(app_init::generate_handlers());

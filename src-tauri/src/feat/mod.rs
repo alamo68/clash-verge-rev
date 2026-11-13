@@ -24,3 +24,6 @@ pub use profile::*;
 pub use proxy::*;
 pub use tun::*;
 pub use window::*;
+
+#[cfg(target_os = "macos")]
+pub mod hearthstone;
