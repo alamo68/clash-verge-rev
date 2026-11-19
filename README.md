@@ -30,10 +30,7 @@ A Clash Meta GUI based on <a href="https://github.com/tauri-apps/tauri">Tauri</a
 使用前请退出原有 Clash Verge 和独立 SwiftSkipper。此功能不修改 HSTracker；建议搭配官方 HSTracker 3.7.4 使用。
 
 ## Preview
-
-| Dark                             | Light                             |
-| -------------------------------- | --------------------------------- |
-| ![预览](./docs/preview_dark.png) | ![预览](./docs/preview_light.png) |
+| ![预览](./docs/preview_Hearthstone.jpg) |
 
 ## Install
 
