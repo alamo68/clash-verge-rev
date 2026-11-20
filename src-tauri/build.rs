@@ -34,29 +34,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        let source = std::path::Path::new("native/hearthstone-overlay");
-        println!("cargo:rerun-if-changed={}", source.display());
-        let arch = std::env::var("CARGO_CFG_TARGET_ARCH")?;
-        let target = if arch == "aarch64" {
-            "arm64-apple-macosx11.0"
-        } else {
-            "x86_64-apple-macosx11.0"
-        };
-        let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR not set")?);
-        let status = std::process::Command::new("xcrun")
-            .args(["swiftc", "-O", "-parse-as-library", "-target", target])
-            .arg(source.join("main.swift"))
-            .arg(source.join("GameSceneMonitor.swift"))
-            .arg(source.join("GameplayVisibility.swift"))
-            .arg("-o")
-            .arg(output.join("hearthstone-overlay"))
-            .status()?;
-        if !status.success() {
-            return Err("Failed to compile Hearthstone overlay".into());
-        }
-    }
-
     #[cfg(feature = "clippy")]
     {
         println!("cargo:warning=Skipping tauri_build during Clippy");

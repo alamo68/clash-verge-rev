@@ -1364,6 +1364,11 @@ export interface TranslationResources {
             open: string
           }
         }
+        hearthstone: {
+          description: string
+          disconnect: string
+          title: string
+        }
         proxyControl: {
           actions: {
             installService: string

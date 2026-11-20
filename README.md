@@ -23,9 +23,11 @@ A Clash Meta GUI based on <a href="https://github.com/tauri-apps/tauri">Tauri</a
 
 ## 炉石一键拔线（本仓库定制）
 
-[下载最新 macOS 通用版（Intel / M 系列）](https://github.com/alamo68/clash-verge-rev/releases/latest)。这是个人定制版，不是上游官方发布。
+[下载最新 macOS 安装包（Intel / M 系列分别提供）](https://github.com/alamo68/clash-verge-rev/releases/latest)。这是个人定制版，不是上游官方发布。
 
 开启 Clash TUN 模式并确保炉石连接被接管后，进入对局即可在游戏左上角看到绿色「一键拔线」按钮。按钮仅在对局中、且前台为炉石或 HSTracker 时显示，回到菜单或退出游戏后隐藏。
+
+可在「设置 → 炉石传说 → 一键拔线」开启或关闭悬浮按钮，设置自动保存，默认开启。
 
 使用前请退出原有 Clash Verge 和独立 SwiftSkipper。此功能不修改 HSTracker；建议搭配官方 HSTracker 3.7.4 使用。
 

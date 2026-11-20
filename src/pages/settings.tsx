@@ -5,12 +5,14 @@ import { useTranslation } from 'react-i18next'
 
 import { BasePage } from '@/components/base'
 import SettingClash from '@/components/setting/setting-clash'
+import SettingHearthstone from '@/components/setting/setting-hearthstone'
 import SettingSystem from '@/components/setting/setting-system'
 import SettingVergeAdvanced from '@/components/setting/setting-verge-advanced'
 import SettingVergeBasic from '@/components/setting/setting-verge-basic'
 import { SettingsSearch } from '@/components/setting/settings-search'
 import { showNotice } from '@/services/notice-service'
 import { useThemeMode } from '@/services/states'
+import getSystem from '@/utils/get-system'
 import { openExternalUrl } from '@/utils/open-external-url'
 
 const SettingPage = () => {
@@ -112,6 +114,17 @@ const SettingPage = () => {
               >
                 <SettingClash onError={onError} />
               </Box>
+              {getSystem() === 'macos' && (
+                <Box
+                  sx={{
+                    borderRadius: 2,
+                    marginTop: 1.5,
+                    backgroundColor: isDark ? '#282a36' : '#ffffff',
+                  }}
+                >
+                  <SettingHearthstone onError={onError} />
+                </Box>
+              )}
             </Grid>
             <Grid size={6}>
               <Box

@@ -9,6 +9,11 @@
     "title": "Settings"
   },
   "sections": {
+    "hearthstone": {
+      "title": "Hearthstone",
+      "disconnect": "One-click disconnect",
+      "description": "Show the disconnect overlay button during Hearthstone matches. Turning this off hides the button immediately."
+    },
     "system": {
       "title": "System Setting",
       "toggles": {

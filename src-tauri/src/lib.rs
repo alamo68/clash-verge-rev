@@ -280,13 +280,16 @@ pub fn run() -> std::process::ExitCode {
         }
 
         #[cfg(target_os = "macos")]
-        pub async fn handle_reopen(has_visible_windows: bool) {
+        pub async fn handle_reopen() {
             if lightweight::is_in_lightweight_mode() {
                 lightweight::exit_lightweight_mode().await;
                 return;
             }
 
-            if !has_visible_windows {
+            // The native Hearthstone panel can be visible while the main window is hidden.
+            let main_visible = WindowManager::get_main_window()
+                .is_some_and(|window| window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false));
+            if !main_visible {
                 handle::Handle::global().set_activation_policy_regular();
                 let _ = WindowManager::show_main_window().await;
             }
@@ -378,14 +381,12 @@ pub fn run() -> std::process::ExitCode {
             event_handlers::handle_ready_resumed(app_handle);
         }
         #[cfg(target_os = "macos")]
-        tauri::RunEvent::Reopen {
-            has_visible_windows, ..
-        } => {
+        tauri::RunEvent::Reopen { .. } => {
             if core::handle::Handle::global().is_exiting() {
                 return;
             }
             AsyncHandler::spawn(move || async move {
-                event_handlers::handle_reopen(has_visible_windows).await;
+                event_handlers::handle_reopen().await;
             });
         }
         tauri::RunEvent::Exit => {

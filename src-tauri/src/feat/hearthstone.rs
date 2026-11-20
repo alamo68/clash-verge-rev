@@ -1,15 +1,12 @@
-use crate::{core::handle::Handle, process::AsyncHandler};
-use anyhow::{Context, Result, bail};
-use clash_verge_logging::{Type, logging};
-use serde_json::{Value, json};
-use std::{
-    io::{BufRead, BufReader, Write},
-    net::IpAddr,
-    os::unix::fs::PermissionsExt,
-    process::{Command, Stdio},
-    sync::{Arc, Mutex},
-};
-use tauri::{AppHandle, Manager};
+use crate::core::handle::Handle;
+use anyhow::{Context as _, Result, bail};
+use serde_json::Value;
+use std::net::IpAddr;
+
+mod overlay;
+mod scene;
+
+pub use overlay::start;
 
 fn select_connection(connections: &[Value]) -> Result<&str> {
     let mut candidates = Vec::new();
@@ -57,59 +54,10 @@ async fn disconnect() -> Result<()> {
     Ok(())
 }
 
-pub fn start(app: &AppHandle) -> Result<()> {
-    let directory = app.path().app_cache_dir()?.join("hearthstone-overlay");
-    std::fs::create_dir_all(&directory)?;
-    let executable = directory.join(concat!("overlay-", env!("CARGO_PKG_VERSION")));
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/hearthstone-overlay"));
-    if std::fs::read(&executable).ok().as_deref() != Some(bytes.as_slice()) {
-        std::fs::write(&executable, bytes)?;
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
-    }
-    let mut child = Command::new(executable)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(errors) = child.stderr.take() {
-        std::thread::spawn(move || {
-            for line in BufReader::new(errors).lines().map_while(Result::ok) {
-                logging!(info, Type::Core, "{}", line);
-            }
-        });
-    }
-    let input = Arc::new(Mutex::new(child.stdin.take().context("Missing overlay input")?));
-    let output = child.stdout.take().context("Missing overlay output")?;
-    std::thread::spawn(move || {
-        for line in BufReader::new(output).lines() {
-            match line {
-                Ok(line) if line == "skip" => {
-                    let input = input.clone();
-                    AsyncHandler::spawn(move || async move {
-                        let result = disconnect().await;
-                        let response = match result {
-                            Ok(()) => {
-                                json!({"ok": true, "message": "Match connection closed; waiting for Hearthstone to reconnect."})
-                            }
-                            Err(error) => json!({"ok": false, "message": error.to_string()}),
-                        };
-                        if let Ok(mut writer) = input.lock() {
-                            let _ = writeln!(writer, "{response}");
-                        }
-                    });
-                }
-                Ok(_) => (),
-                Err(_) => break,
-            }
-        }
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     fn connection(id: &str, host: &str, port: u16) -> Value {
         json!({"id":id, "metadata":{"processPath":"/Applications/Hearthstone/Hearthstone.app/Contents/MacOS/Hearthstone", "network":"tcp", "host":host,"destinationPort":port}})
     }

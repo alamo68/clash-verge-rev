@@ -219,6 +219,8 @@ struct PlatformVergeFields {
     verge_tproxy_enabled: Option<bool>,
     #[specta(optional)]
     enable_tray_speed: Option<bool>,
+    #[specta(optional)]
+    enable_hearthstone_disconnect: Option<bool>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, specta::Type)]

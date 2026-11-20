@@ -60,6 +60,11 @@ const clash = {
   path: 'settings.sections.clash.title',
 } satisfies GroupDefaults
 
+const hearthstone = {
+  section: 'settings.sections.hearthstone.title',
+  path: 'settings.sections.hearthstone.title',
+} satisfies GroupDefaults
+
 const networkInterface = {
   section: 'settings.sections.clash.title',
   path: 'settings.sections.clash.title',
@@ -259,6 +264,12 @@ const settingsCatalog: readonly SettingEntry[] = [
   }),
   ...group(clash, {
     'settings.sections.clash.form.fields.allowLan': 'allow lan ',
+  }),
+  ...group(hearthstone, {
+    'settings.sections.hearthstone.disconnect': {
+      aliases: 'hearthstone 炉石 断线 拔线 reconnect overlay 悬浮按钮',
+      platforms: ['macos'],
+    },
   }),
   ...group(networkInterface, {
     'settings.modals.networkInterface.title': {

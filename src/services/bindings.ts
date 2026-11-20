@@ -457,6 +457,7 @@ export type IVerge_Deserialize = {
   verge_tproxy_port?: number | null
   verge_tproxy_enabled?: boolean | null
   enable_tray_speed?: boolean | null
+  enable_hearthstone_disconnect?: boolean | null
 }
 
 /**  ### `verge.yaml` schema */
@@ -548,6 +549,7 @@ export type IVerge_Serialize = {
   verge_tproxy_port?: number | null
   verge_tproxy_enabled?: boolean | null
   enable_tray_speed?: boolean | null
+  enable_hearthstone_disconnect?: boolean | null
 }
 
 export type IconInfo = {
@@ -675,6 +677,7 @@ export type PlatformVergeFields_Deserialize = {
   verge_tproxy_port?: number | null
   verge_tproxy_enabled?: boolean | null
   enable_tray_speed?: boolean | null
+  enable_hearthstone_disconnect?: boolean | null
 }
 
 export type PlatformVergeFields_Serialize = {
@@ -684,6 +687,7 @@ export type PlatformVergeFields_Serialize = {
   verge_tproxy_port?: number | null
   verge_tproxy_enabled?: boolean | null
   enable_tray_speed?: boolean | null
+  enable_hearthstone_disconnect?: boolean | null
 }
 
 export type PrfExtra = {

@@ -72,6 +72,9 @@ verge_registry! {
     enable_tun_mode => Tun;
     enable_auto_launch => [Autostart];
     enable_silent_start => NoEffect;
+    // The overlay polls committed configuration, so rejected drafts cannot change visibility.
+    #[cfg(target_os = "macos")]
+    enable_hearthstone_disconnect => NoEffect;
     enable_system_proxy => [SystemProxy, TrayMenu, TrayTooltip, TrayIcon];
     enable_proxy_guard => [SystemProxy];
     enable_bypass_check => NoEffect;

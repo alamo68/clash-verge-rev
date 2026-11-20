@@ -9,6 +9,11 @@
     "title": "设置"
   },
   "sections": {
+    "hearthstone": {
+      "title": "炉石传说",
+      "disconnect": "一键拔线",
+      "description": "开启后，在炉石对局内显示「一键拔线」悬浮按钮。关闭后隐藏按钮，立即生效。"
+    },
     "system": {
       "title": "系统设置",
       "toggles": {

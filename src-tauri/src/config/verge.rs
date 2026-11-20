@@ -71,6 +71,10 @@ pub struct IVerge {
 
     pub enable_silent_start: Option<bool>,
 
+    #[cfg(target_os = "macos")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_hearthstone_disconnect: Option<bool>,
+
     pub enable_system_proxy: Option<bool>,
 
     pub enable_proxy_guard: Option<bool>,
@@ -346,6 +350,8 @@ impl IVerge {
             tun_tray_icon: Some(false),
             enable_auto_launch: Some(false),
             enable_silent_start: Some(false),
+            #[cfg(target_os = "macos")]
+            enable_hearthstone_disconnect: Some(true),
             enable_hover_jump_navigator: Some(true),
             hover_jump_navigator_delay: Some(280),
             enable_system_proxy: Some(false),
@@ -428,6 +434,8 @@ impl IVerge {
         patch_opt_field!(self, patch, enable_tun_mode);
         patch_opt_field!(self, patch, enable_auto_launch);
         patch_opt_field!(self, patch, enable_silent_start);
+        #[cfg(target_os = "macos")]
+        patch_opt_field!(self, patch, enable_hearthstone_disconnect);
         patch_opt_field!(self, patch, enable_hover_jump_navigator);
         patch_opt_field!(self, patch, hover_jump_navigator_delay);
         #[cfg(not(target_os = "windows"))]
