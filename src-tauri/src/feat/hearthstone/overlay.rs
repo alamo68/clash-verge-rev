@@ -79,11 +79,16 @@ define_class!(
         fn mouse_down(&self, _event: &NSEvent) {
             if !self.ivars().config.data_arc().enable_hearthstone_disconnect.unwrap_or(true)
                 || self.ivars().busy.replace(true) { return; }
+            let requested_at = Instant::now();
+            logging!(info, Type::Core, "Hearthstone disconnect requested");
             self.ivars().reset_at.set(None);
             self.set_title("处理中…");
             let app = self.ivars().app.clone();
             AsyncHandler::spawn(move || async move {
-                let result = super::disconnect().await.map_err(|error| error.to_string());
+                let result = super::disconnect(requested_at).await.map_err(|error| error.to_string());
+                if let Err(error) = &result {
+                    logging!(warn, Type::Core, "Hearthstone disconnect failed after {}ms: {error}", requested_at.elapsed().as_millis());
+                }
                 let _ = app.run_on_main_thread(move || {
                     OVERLAY.with_borrow(|overlay| {
                         if let Some(overlay) = overlay {

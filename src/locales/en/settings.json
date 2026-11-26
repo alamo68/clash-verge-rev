@@ -12,7 +12,7 @@
     "hearthstone": {
       "title": "Hearthstone",
       "disconnect": "One-click disconnect",
-      "description": "Show the disconnect overlay button during Hearthstone matches. Turning this off hides the button immediately."
+      "description": "Show the disconnect overlay during Hearthstone matches. Fast disconnect requires the bundled stable core; reinstall the service after updating the app to load it."
     },
     "system": {
       "title": "System Setting",

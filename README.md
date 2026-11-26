@@ -29,6 +29,12 @@ A Clash Meta GUI based on <a href="https://github.com/tauri-apps/tauri">Tauri</a
 
 可在「设置 → 炉石传说 → 一键拔线」开启或关闭悬浮按钮，设置自动保存，默认开启。
 
+快速拔线使用定制稳定内核 `v1.19.34-hsreset.1`，直接重置所选对局的游戏侧连接。服务模式下，替换应用后需在设置中重新安装服务，才能加载新版内核；请在退出对局后操作。确认「Clash 内核」显示上述版本后再使用。普通内核或 Alpha 内核未提供此功能时，按钮会提示更新，不会假报重置成功。
+
+设置中的「更新内核」会下载官方内核并覆盖定制内核，使快速拔线失效；需要保留此功能时，请通过本仓库后续安装包更新。若已覆盖，请重新替换本安装包并重新安装服务。
+
+从源码打包此版本时，先运行 `pnpm prebuild` 准备资源，再使用 Go 1.22.12 运行 `pnpm prebuild:hearthstone aarch64-apple-darwin` 或 `pnpm prebuild:hearthstone x86_64-apple-darwin`，最后执行对应架构的 Tauri 构建。补丁和源代码提交已固定在 `patches/` 与构建脚本中。
+
 使用前请退出原有 Clash Verge 和独立 SwiftSkipper。此功能不修改 HSTracker；建议搭配官方 HSTracker 3.7.4 使用。
 
 ## Preview

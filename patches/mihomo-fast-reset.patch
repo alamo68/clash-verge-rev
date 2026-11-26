@@ -1,0 +1,367 @@
+diff --git a/component/proxydialer/proxydialer.go b/component/proxydialer/proxydialer.go
+index 78cf12e..987fe7e 100644
+--- a/component/proxydialer/proxydialer.go
++++ b/component/proxydialer/proxydialer.go
+@@ -45,7 +45,7 @@ func (p proxyDialer) DialContext(ctx context.Context, network, address string) (
+ 		return nil, err
+ 	}
+ 	if p.statistic {
+-		conn = statistic.NewTCPTracker(conn, statistic.DefaultManager, currentMeta, nil, 0, 0, false)
++		conn = statistic.NewTCPTracker(conn, nil, statistic.DefaultManager, currentMeta, nil, 0, 0, false)
+ 	}
+ 	return conn, err
+ }
+diff --git a/hub/route/connections.go b/hub/route/connections.go
+index ddfa6c5..e0e9531 100644
+--- a/hub/route/connections.go
++++ b/hub/route/connections.go
+@@ -3,6 +3,7 @@ package route
+ import (
+ 	"bytes"
+ 	"encoding/json"
++	"errors"
+ 	"strconv"
+ 	"time"
+ 
+@@ -18,6 +19,7 @@ func connectionRouter() http.Handler {
+ 	r.Get("/", getConnections)
+ 	r.Delete("/", closeAllConnections)
+ 	r.Delete("/{id}", closeConnection)
++	r.Delete("/{id}/reset", resetConnection)
+ 	return r
+ }
+ 
+@@ -85,3 +87,29 @@ func closeAllConnections(w http.ResponseWriter, r *http.Request) {
+ 	})
+ 	render.NoContent(w, r)
+ }
++
++func resetConnection(w http.ResponseWriter, r *http.Request) {
++	c := statistic.DefaultManager.Get(chi.URLParam(r, "id"))
++	if c == nil {
++		render.Status(r, http.StatusGone)
++		render.JSON(w, r, render.M{"message": "selected connection is no longer active"})
++		return
++	}
++	resetter, ok := c.(interface{ Reset() error })
++	if !ok {
++		render.Status(r, http.StatusNotImplemented)
++		render.JSON(w, r, render.M{"message": statistic.ErrInboundResetUnsupported.Error()})
++		return
++	}
++	if err := resetter.Reset(); err != nil {
++		status := http.StatusInternalServerError
++		if errors.Is(err, statistic.ErrInboundResetUnsupported) {
++			status = http.StatusNotImplemented
++		}
++		render.Status(r, status)
++		render.JSON(w, r, render.M{"message": err.Error()})
++		return
++	}
++	w.Header().Set("X-Mihomo-Connection-Reset", "true")
++	render.NoContent(w, r)
++}
+diff --git a/hub/route/server.go b/hub/route/server.go
+index 6d37d48..fa1678e 100644
+--- a/hub/route/server.go
++++ b/hub/route/server.go
+@@ -570,5 +570,5 @@ func getLogs(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func version(w http.ResponseWriter, r *http.Request) {
+-	render.JSON(w, r, render.M{"meta": C.Meta, "version": C.Version})
++	render.JSON(w, r, render.M{"meta": C.Meta, "version": C.Version, "connectionReset": true})
+ }
+diff --git a/tunnel/dns_dialer.go b/tunnel/dns_dialer.go
+index c409a29..6b16c11 100644
+--- a/tunnel/dns_dialer.go
++++ b/tunnel/dns_dialer.go
+@@ -102,7 +102,7 @@ func (d *DNSDialer) DialContext(ctx context.Context, network, addr string) (net.
+ 		}
+ 		logMetadata(metadata, rule, conn)
+ 
+-		conn = statistic.NewTCPTracker(conn, statistic.DefaultManager, metadata, rule, 0, 0, false)
++		conn = statistic.NewTCPTracker(conn, nil, statistic.DefaultManager, metadata, rule, 0, 0, false)
+ 
+ 		return conn, nil
+ 	} else {
+diff --git a/tunnel/statistic/tracker.go b/tunnel/statistic/tracker.go
+index 2fbb1cf..fbabbec 100644
+--- a/tunnel/statistic/tracker.go
++++ b/tunnel/statistic/tracker.go
+@@ -1,6 +1,7 @@
+ package statistic
+ 
+ import (
++	"errors"
+ 	"io"
+ 	"net"
+ 	"time"
+@@ -12,6 +13,7 @@ import (
+ 	C "github.com/metacubex/mihomo/constant"
+ 
+ 	"github.com/gofrs/uuid/v5"
++	"github.com/metacubex/sing/common"
+ )
+ 
+ type Tracker interface {
+@@ -37,6 +39,7 @@ type tcpTracker struct {
+ 	C.Conn `json:"-"`
+ 	*TrackerInfo
+ 	manager *Manager
++	inbound net.Conn
+ 
+ 	pushToManager bool `json:"-"`
+ }
+@@ -112,14 +115,33 @@ func (tt *tcpTracker) Close() error {
+ 	return tt.Conn.Close()
+ }
+ 
++var ErrInboundResetUnsupported = errors.New("connection does not support an immediate inbound reset")
++
++// Reset is only used by the explicit per-connection API, never by ordinary relay cleanup.
++func (tt *tcpTracker) Reset() error {
++	if aborter, ok := common.Cast[interface{ Abort() }](tt.inbound); ok {
++		aborter.Abort()
++	} else if conn, ok := common.Cast[*net.TCPConn](tt.inbound); ok && tt.Metadata.Type == C.TUN {
++		if err := conn.SetLinger(0); err != nil {
++			return err
++		}
++		_ = conn.Close()
++	} else {
++		return ErrInboundResetUnsupported
++	}
++	_ = tt.Close()
++	return nil
++}
++
+ func (tt *tcpTracker) Upstream() any {
+ 	return tt.Conn
+ }
+ 
+-func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
++func NewTCPTracker(conn C.Conn, inbound net.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
+ 	metadata.RemoteDst = conn.RemoteDestination()
+ 
+ 	t := &tcpTracker{
++		inbound: inbound,
+ 		Conn:    conn,
+ 		manager: manager,
+ 		TrackerInfo: &TrackerInfo{
+diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
+index 86dbc14..ef41431 100644
+--- a/tunnel/tunnel.go
++++ b/tunnel/tunnel.go
+@@ -612,7 +612,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+ 	}
+ 	logMetadata(metadata, rule, remoteConn)
+ 
+-	remoteConn = statistic.NewTCPTracker(remoteConn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, true)
++	remoteConn = statistic.NewTCPTracker(remoteConn, conn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, true)
+ 	defer func(remoteConn C.Conn) {
+ 		_ = remoteConn.Close()
+ 	}(remoteConn)
+diff --git a/hub/route/connections_reset_test.go b/hub/route/connections_reset_test.go
+new file mode 100644
+index 0000000..0697143
+--- /dev/null
++++ b/hub/route/connections_reset_test.go
+@@ -0,0 +1,69 @@
++package route
++
++import (
++	"net"
++	"testing"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/http/httptest"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/tunnel/statistic"
++)
++
++type resetRouteOutbound struct {
++	C.Conn
++	closed bool
++}
++
++func (c *resetRouteOutbound) Close() error              { c.closed = true; return nil }
++func (c *resetRouteOutbound) RemoteDestination() string { return "" }
++func (c *resetRouteOutbound) Chains() C.Chain           { return nil }
++func (c *resetRouteOutbound) ProviderChains() C.Chain   { return nil }
++
++type resetRouteInbound struct {
++	net.Conn
++	aborted bool
++}
++
++func (c *resetRouteInbound) Abort() { c.aborted = true }
++
++func TestResetConnectionAPIIsExplicitAndSelected(t *testing.T) {
++	outA, outB := &resetRouteOutbound{}, &resetRouteOutbound{}
++	inA, inB := &resetRouteInbound{}, &resetRouteInbound{}
++	a := statistic.NewTCPTracker(outA, inA, statistic.DefaultManager, &C.Metadata{}, nil, 0, 0, true)
++	b := statistic.NewTCPTracker(outB, inB, statistic.DefaultManager, &C.Metadata{}, nil, 0, 0, true)
++	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
++	router := connectionRouter()
++	response := httptest.NewRecorder()
++	router.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/"+a.ID()+"/reset", nil))
++	if response.Code != http.StatusNoContent || response.Header().Get("X-Mihomo-Connection-Reset") != "true" {
++		t.Fatalf("reset response: %d %s", response.Code, response.Body.String())
++	}
++	if !inA.aborted || !outA.closed || statistic.DefaultManager.Get(a.ID()) != nil {
++		t.Fatal("selected connection was not reset")
++	}
++	if inB.aborted || outB.closed || statistic.DefaultManager.Get(b.ID()) == nil {
++		t.Fatal("another connection was affected")
++	}
++	response = httptest.NewRecorder()
++	router.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/"+a.ID()+"/reset", nil))
++	if response.Code != http.StatusGone {
++		t.Fatalf("missing connection must return410, got %d", response.Code)
++	}
++	response = httptest.NewRecorder()
++	router.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/"+b.ID(), nil))
++	if response.Code != http.StatusNoContent || inB.aborted {
++		t.Fatal("ordinary DELETE gained reset semantics")
++	}
++}
++
++func TestResetConnectionAPIRejectsUnsupportedInbound(t *testing.T) {
++	outbound := &resetRouteOutbound{}
++	tracker := statistic.NewTCPTracker(outbound, nil, statistic.DefaultManager, &C.Metadata{}, nil, 0, 0, true)
++	t.Cleanup(func() { _ = tracker.Close() })
++	response := httptest.NewRecorder()
++	connectionRouter().ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/"+tracker.ID()+"/reset", nil))
++	if response.Code != http.StatusNotImplemented || outbound.closed {
++		t.Fatalf("unsupported reset changed connection: %d", response.Code)
++	}
++}
+diff --git a/tunnel/statistic/tracker_reset_test.go b/tunnel/statistic/tracker_reset_test.go
+new file mode 100644
+index 0000000..f140060
+--- /dev/null
++++ b/tunnel/statistic/tracker_reset_test.go
+@@ -0,0 +1,123 @@
++package statistic
++
++import (
++	"errors"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/common/utils"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++type resetTestOutbound struct {
++	C.Conn
++	aborted *bool
++	closed  bool
++}
++
++func (c *resetTestOutbound) Close() error {
++	if c.aborted != nil && !*c.aborted {
++		return errors.New("outbound closed before inbound reset")
++	}
++	c.closed = true
++	return nil
++}
++
++type resetTestInbound struct {
++	net.Conn
++	aborted bool
++}
++
++func (c *resetTestInbound) Abort() { c.aborted = true }
++
++func TestTrackerResetIsExplicitAndSelected(t *testing.T) {
++	manager := &Manager{}
++	inbound := &resetTestInbound{}
++	outbound := &resetTestOutbound{aborted: &inbound.aborted}
++	tracker := &tcpTracker{Conn: outbound, inbound: inbound, manager: manager, TrackerInfo: &TrackerInfo{UUID: utils.NewUUIDV4()}}
++	other := &tcpTracker{Conn: &resetTestOutbound{}, manager: manager, TrackerInfo: &TrackerInfo{UUID: utils.NewUUIDV4()}}
++	manager.Join(tracker)
++	manager.Join(other)
++	if err := tracker.Reset(); err != nil {
++		t.Fatal(err)
++	}
++	if !inbound.aborted || !outbound.closed || manager.Get(tracker.ID()) != nil {
++		t.Fatal("selected connection was not reset and released")
++	}
++	if manager.Get(other.ID()) != other {
++		t.Fatal("unselected connection was removed")
++	}
++	if err := tracker.Reset(); err != nil {
++		t.Fatal(err)
++	}
++	inbound.aborted = false
++	outbound.aborted = nil
++	if err := tracker.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if inbound.aborted {
++		t.Fatal("ordinary Close must not reset inbound")
++	}
++}
++
++func TestTrackerResetUnsupportedLeavesConnectionOpen(t *testing.T) {
++	manager := &Manager{}
++	outbound := &resetTestOutbound{}
++	tracker := &tcpTracker{Conn: outbound, manager: manager, TrackerInfo: &TrackerInfo{UUID: utils.NewUUIDV4()}}
++	manager.Join(tracker)
++	if err := tracker.Reset(); !errors.Is(err, ErrInboundResetUnsupported) {
++		t.Fatalf("unsupported reset returned %v", err)
++	}
++	if outbound.closed || manager.Get(tracker.ID()) != tracker {
++		t.Fatal("unsupported reset changed connection")
++	}
++}
++
++func TestTrackerResetSystemTUNDoesNotResetSharedProxySockets(t *testing.T) {
++	for _, typ := range []C.Type{C.TUN, C.HTTP} {
++		t.Run(typ.String(), func(t *testing.T) {
++			listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer listener.Close()
++			client, err := net.DialTCP("tcp4", nil, listener.Addr().(*net.TCPAddr))
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer client.Close()
++			server, err := listener.AcceptTCP()
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer server.Close()
++			manager := &Manager{}
++			outbound := &resetTestOutbound{}
++			tracker := &tcpTracker{Conn: outbound, inbound: server, manager: manager, TrackerInfo: &TrackerInfo{UUID: utils.NewUUIDV4(), Metadata: &C.Metadata{Type: typ}}}
++			manager.Join(tracker)
++			err = tracker.Reset()
++			_ = client.SetReadDeadline(time.Now().Add(time.Second))
++			var data [1]byte
++			if typ == C.HTTP {
++				if !errors.Is(err, ErrInboundResetUnsupported) || outbound.closed {
++					t.Fatal("proxy transport reset was not refused")
++				}
++				if _, err = server.Write([]byte{42}); err != nil {
++					t.Fatal(err)
++				}
++				if _, err = client.Read(data[:]); err != nil || data[0] != 42 {
++					t.Fatalf("proxy transport was affected: %v", err)
++				}
++				return
++			}
++			if err != nil || !outbound.closed {
++				t.Fatalf("System TUN reset failed: %v", err)
++			}
++			if _, err = client.Read(data[:]); err == nil || !strings.Contains(err.Error(), "reset") {
++				t.Fatalf("System TUN did not deliver reset: %v", err)
++			}
++		})
++	}
++}

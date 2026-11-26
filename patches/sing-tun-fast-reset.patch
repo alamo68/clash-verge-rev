@@ -1,0 +1,135 @@
+diff --git a/stack_gvisor_tcp.go b/stack_gvisor_tcp.go
+index e48a5e8..a55ecd5 100644
+--- a/stack_gvisor_tcp.go
++++ b/stack_gvisor_tcp.go
+@@ -105,7 +105,7 @@ func (f *TCPForwarder) Forward(r *tcp.ForwarderRequest) {
+ 	endpoint.SetSockOpt(&keepAliveIdle)
+ 	keepAliveInterval := tcpip.KeepaliveIntervalOption(15 * time.Second)
+ 	endpoint.SetSockOpt(&keepAliveInterval)
+-	tcpConn := gonet.NewTCPConn(&wq, endpoint)
++	tcpConn := &resettableTCPConn{TCPConn: gonet.NewTCPConn(&wq, endpoint), endpoint: endpoint}
+ 	lAddr := tcpConn.RemoteAddr()
+ 	rAddr := tcpConn.LocalAddr()
+ 	if lAddr == nil || rAddr == nil {
+@@ -122,3 +122,20 @@ func (f *TCPForwarder) Forward(r *tcp.ForwarderRequest) {
+ 		}
+ 	}()
+ }
++
++// Abort is separate from Close so ordinary stream shutdown still drains gracefully.
++type resettableTCPConn struct {
++	*gonet.TCPConn
++	endpoint tcpip.Endpoint
++}
++
++func (c *resettableTCPConn) Abort() {
++	c.endpoint.Abort()
++}
++
++func (c *resettableTCPConn) Upstream() any {
++	return c.TCPConn
++}
++
++func (c *resettableTCPConn) ReaderReplaceable() bool { return true }
++func (c *resettableTCPConn) WriterReplaceable() bool { return true }
+diff --git a/stack_gvisor_reset_test.go b/stack_gvisor_reset_test.go
+new file mode 100644
+index 0000000..48f6b11
+--- /dev/null
++++ b/stack_gvisor_reset_test.go
+@@ -0,0 +1,95 @@
++//go:build with_gvisor
++
++package tun
++
++import (
++	"context"
++	"io"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/gvisor/pkg/tcpip"
++	"github.com/metacubex/gvisor/pkg/tcpip/adapters/gonet"
++	"github.com/metacubex/gvisor/pkg/tcpip/header"
++	"github.com/metacubex/gvisor/pkg/tcpip/link/loopback"
++	"github.com/metacubex/gvisor/pkg/tcpip/network/ipv4"
++	"github.com/metacubex/gvisor/pkg/tcpip/stack"
++	"github.com/metacubex/gvisor/pkg/tcpip/transport/tcp"
++	"github.com/metacubex/sing/common"
++	"github.com/metacubex/sing/common/bufio"
++	M "github.com/metacubex/sing/common/metadata"
++)
++
++func TestGVisorResetSelectedConnection(t *testing.T) {
++	s := stack.New(stack.Options{
++		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
++		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
++	})
++	t.Cleanup(s.Close)
++	if err := s.CreateNIC(1, loopback.New()); err != nil {
++		t.Fatal(err)
++	}
++	address := tcpip.AddrFrom4([4]byte{127, 0, 0, 1})
++	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: address.WithPrefix()}, stack.AddressProperties{}); err != nil {
++		t.Fatal(err)
++	}
++	s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4LoopbackSubnet, NIC: 1}})
++	accepted := make(chan net.Conn, 2)
++	handler := &testHandler{tcp: func(_ context.Context, conn net.Conn, _ M.Metadata) error { accepted <- conn; return nil }}
++	s.SetTransportProtocolHandler(tcp.ProtocolNumber, NewTCPForwarder(context.Background(), s, handler).HandlePacket)
++	dial := func() (*gonet.TCPConn, net.Conn) {
++		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++		defer cancel()
++		conn, err := gonet.DialContextTCP(ctx, s, tcpip.FullAddress{NIC: 1, Addr: address, Port: 1119}, ipv4.ProtocolNumber)
++		if err != nil {
++			t.Fatal(err)
++		}
++		t.Cleanup(func() { _ = conn.Close() })
++		select {
++		case server := <-accepted:
++			t.Cleanup(func() { _ = server.Close() })
++			return conn, server
++		case <-ctx.Done():
++			t.Fatal("forwarded connection was not delivered")
++			return nil, nil
++		}
++	}
++	client, server := dial()
++	otherClient, otherServer := dial()
++	aborter, ok := common.Cast[interface{ Abort() }](bufio.NewExtendedConn(server))
++	if !ok {
++		t.Fatal("inbound wrapper lost reset capability")
++	}
++	received := make(chan error, 1)
++	go func() { var b [1]byte; _, err := client.Read(b[:]); received <- err }()
++	start := time.Now()
++	aborter.Abort()
++	select {
++	case err := <-received:
++		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "reset") {
++			t.Fatalf("expected reset, received %v", err)
++		}
++		t.Logf("selected game-facing socket reset in %s", time.Since(start))
++	case <-time.After(500 * time.Millisecond):
++		t.Fatal("reset waited for peer traffic")
++	}
++	aborter.Abort()
++	if err := otherClient.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := otherServer.Write([]byte{42}); err != nil {
++		t.Fatal(err)
++	}
++	var data [1]byte
++	if _, err := io.ReadFull(otherClient, data[:]); err != nil || data[0] != 42 {
++		t.Fatalf("unselected connection changed: %v", err)
++	}
++	if err := otherServer.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := otherClient.Read(data[:]); err != io.EOF {
++		t.Fatalf("ordinary half-close must remain EOF, got %v", err)
++	}
++}
